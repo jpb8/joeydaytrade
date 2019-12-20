@@ -37,7 +37,7 @@ def initialize(context):
     context.longs = []
     context.shorts = []
 
-    # If we take a loss on trade, dont trade that security for 3 days
+    # If we take a loss on trade, dont trade that security for X days
     context.waits = {}
     context.waits_max = 5  # trading days
     context.max_lev = 0.2
@@ -166,7 +166,6 @@ def get_prices(context, data):
     # Remove Waits from Output
     context.output = context.output.drop(context.output.index[[list(context.waits.values())]])
     Universe500 = context.output.index.tolist()
-    # prices = data.history(Universe500,'price',20,'1d')
     intraday_price = data.history(Universe500, 'close', 6, '1m').bfill().ffill()
     intraday_ret = (intraday_price.iloc[-1] - intraday_price.iloc[0]) / intraday_price.iloc[0]
 
@@ -179,28 +178,14 @@ def get_prices(context, data):
     today_price_df = pd.DataFrame(today_price)
     today_price_df.columns = ["cur_price"]
 
-    # Create VELOCITY Metric
-    # TODO: Move to PIPELINE?
-    # pri = data.history(Universe500, "price",100, "1d").bfill().ffill()
-    # velocity = (pri.iloc[-1] - pri.iloc[:-2].mean())
-
-    # velocity_df=pd.DataFrame(velocity)
-    # velocity_df.columns = ["velocity"]
-
-    # slope_data = intraday_price.apply(slope)
-    # slope_df=pd.DataFrame(slope_data)
-    # slope_df.columns = ["slope"]
-
     # Create Today's price Metric
     intraday_ret_df = pd.DataFrame(intraday_ret)
     intraday_ret_df.columns = ["intraday_return"]
 
     # Joins
     context.output = context.output.join(today_price_df, how='outer')
-    # context.output = context.output.join(velocity_df, how='outer')
     context.output = context.output.join(intraday_ret_df, how='outer')
     context.output = context.output.join(rvol_df, how='outer')
-    # context.output = context.output.join(slope_df, how='outer')
 
     context.output["per_off_ewma"] = (context.output["ewma5"] - context.output["cur_price"]) / context.output["ewma5"]
 
@@ -284,8 +269,6 @@ def take_profits(context, data):
                     log.info("Closing Short {} for Profit of ${}".format(s, pnl))
     if total_cash != 0:
         add_to_winners(context, total_cash, data)
-    # if context.profit_logging:
-    #     log.info("Total Profit {}".format(total_profit))
 
 
 import statsmodels.api as sm
