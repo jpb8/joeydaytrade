@@ -1,0 +1,1 @@
+worker: pylivetrader run algo.py
