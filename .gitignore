@@ -3,5 +3,5 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-config.yaml
+config.yml
 algo-state.pkl

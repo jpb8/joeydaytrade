@@ -42,7 +42,7 @@ def initialize(context):
     context.waits_max = 5  # trading days
     context.max_lev = 0.2
 
-    context.day_extra_cash = 0
+    context.spy = symbol('SPY')
 
     # Hold Setups
     context.holds = {}
@@ -58,7 +58,8 @@ def initialize(context):
     context.long_cnt = 12
     context.short_leverage = -0.4
     context.short_cnt = 8
-    context.max_conc = 0.4
+    context.max_conc = 0.2
+
 
     for i in range(185, 380, 5):  # (low, high, every i minutes)
         # take profits/losses every hour
@@ -118,7 +119,7 @@ def make_pipeline():
     low = Low()
     universe = (
             (vol > 250000)
-            & (rng > 0.03)
+            & (rng > 0.025)
     )
 
     return Pipeline(
@@ -157,11 +158,11 @@ def calc_leverage_settings(c, spy_slope, spy_returns):
 
 
 def get_prices(context, data):
-    spy_price = data.history([sid(8554)], 'price', 100, '1d')
-    spy_slope = slope(spy_price[sid(8554)])
+    spy_price = data.history([context.spy], 'price', 100, '1d')
+    spy_slope = slope(spy_price[context.spy])
     spy_current_rets = (spy_price.iloc[-1] - spy_price.iloc[-2]) / spy_price.iloc[-1]
 
-    calc_leverage_settings(context, spy_slope, spy_current_rets[sid(8554)])
+    calc_leverage_settings(context, spy_slope, spy_current_rets[context.spy])
 
     # Remove Waits from Output
     context.output = context.output.drop(context.output.index[[list(context.waits.values())]])
