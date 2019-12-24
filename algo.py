@@ -14,9 +14,9 @@ log = logbook.Logger('algo')
 def initialize(context):
     # Schedule our rebalance function to run at the start of each day.
     schedule_function(func=enter_positions, date_rule=date_rules.every_day(),
-                           time_rule=time_rules.market_open(minutes=20))
-    schedule_function(func=cancel_open_orders, date_rule=date_rules.every_day(),
                            time_rule=time_rules.market_open(minutes=25))
+    schedule_function(func=cancel_open_orders, date_rule=date_rules.every_day(),
+                           time_rule=time_rules.market_open(minutes=30))
 
     # Record variables at the end of each day.
     schedule_function(func=my_record_vars, date_rule=date_rules.every_day(),
@@ -28,7 +28,7 @@ def initialize(context):
 
     # Get intraday prices and create Short/Long lists
     schedule_function(func=get_prices, date_rule=date_rules.every_day(),
-                           time_rule=time_rules.market_open(minutes=15))
+                           time_rule=time_rules.market_open(minutes=20))
 
     # Set commissions and slippage to 0 to determine pure alpha
     # set_commission(commission.PerShare(cost=0, min_trade_cost=0))
