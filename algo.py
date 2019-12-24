@@ -14,7 +14,7 @@ log = logbook.Logger('algo')
 def initialize(context):
     # Schedule our rebalance function to run at the start of each day.
     schedule_function(func=enter_positions, date_rule=date_rules.every_day(),
-                           time_rule=time_rules.market_open(minutes=10))
+                           time_rule=time_rules.market_open(minutes=20))
     schedule_function(func=cancel_open_orders, date_rule=date_rules.every_day(),
                            time_rule=time_rules.market_open(minutes=25))
 
@@ -28,7 +28,7 @@ def initialize(context):
 
     # Get intraday prices and create Short/Long lists
     schedule_function(func=get_prices, date_rule=date_rules.every_day(),
-                           time_rule=time_rules.market_open(minutes=7))
+                           time_rule=time_rules.market_open(minutes=15))
 
     # Set commissions and slippage to 0 to determine pure alpha
     # set_commission(commission.PerShare(cost=0, min_trade_cost=0))
@@ -167,10 +167,10 @@ def get_prices(context, data):
     # Remove Waits from Output
     context.output = context.output.drop(context.output.index[[list(context.waits.values())]])
     Universe500 = context.output.index.tolist()
-    intraday_price = data.history(Universe500, 'close', 6, '1m').bfill().ffill()
+    intraday_price = data.history(Universe500, 'close', 6, '1m')
     intraday_ret = (intraday_price.iloc[-1] - intraday_price.iloc[0]) / intraday_price.iloc[0]
 
-    vol_data = data.history(Universe500, 'volume', 6, '1m').bfill().ffill()
+    vol_data = data.history(Universe500, 'volume', 6, '1m')
     rvol = vol_data.mean() * 225
     rvol_df = pd.DataFrame(rvol)
     rvol_df.columns = ["rvol"]
@@ -231,7 +231,7 @@ def enter_positions(context, data):
 def take_profits(context, data):
     positions = context.portfolio.positions
     if len(positions) == 0: return
-    history = data.history(list(positions), 'close', 10, '1m').bfill().ffill()
+    history = data.history(list(positions), 'close', 10, '1m')
     total_profit = 0
     # if position isn't trending in the right direction and meets Profit/Loss criteria, DUMP
     total_cash = 0
@@ -282,7 +282,7 @@ def slope(in_list):  # Return slope of regression line. [Make sure this list con
 def add_to_winners(context, cash, data):
     winners = {}
     positions = context.portfolio.positions
-    history = data.history(list(positions), 'close', 10, '1m').bfill().ffill()
+    history = data.history(list(positions), 'close', 10, '1m')
     for s in positions:
         amount = positions[s].amount
         price = data.current(s, 'price')
