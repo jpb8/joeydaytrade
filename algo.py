@@ -11,24 +11,25 @@ import logbook
 
 log = logbook.Logger('algo')
 
+
 def initialize(context):
     # Schedule our rebalance function to run at the start of each day.
     schedule_function(func=enter_positions, date_rule=date_rules.every_day(),
-                           time_rule=time_rules.market_open(minutes=90))
+                      time_rule=time_rules.market_open(minutes=10))
     schedule_function(func=cancel_open_orders, date_rule=date_rules.every_day(),
-                           time_rule=time_rules.market_open(minutes=100))
+                      time_rule=time_rules.market_open(minutes=15))
 
     # Record variables at the end of each day.
     schedule_function(func=my_record_vars, date_rule=date_rules.every_day(),
-                           time_rule=time_rules.market_close(minutes=10))
+                      time_rule=time_rules.market_close(minutes=10))
 
     schedule_function(func=close_positions, date_rule=date_rules.every_day(),
-                           time_rule=time_rules.market_close(minutes=15))
+                      time_rule=time_rules.market_close(minutes=15))
     schedule_function(func=close_positions, date_rule=date_rules.every_day(), time_rule=time_rules.market_open())
 
     # Get intraday prices and create Short/Long lists
     schedule_function(func=get_prices, date_rule=date_rules.every_day(),
-                           time_rule=time_rules.market_open(minutes=85))
+                      time_rule=time_rules.market_open(minutes=7))
 
     # Set commissions and slippage to 0 to determine pure alpha
     # set_commission(commission.PerShare(cost=0, min_trade_cost=0))
@@ -60,11 +61,10 @@ def initialize(context):
     context.short_cnt = 8
     context.max_conc = 0.2
 
-
-    for i in range(185, 380, 5):  # (low, high, every i minutes)
+    for i in range(185, 360, 5):  # (low, high, every i minutes)
         # take profits/losses every hour
         schedule_function(func=take_profits, date_rule=date_rules.every_day(),
-                               time_rule=time_rules.market_open(minutes=i))
+                          time_rule=time_rules.market_open(minutes=i))
 
     # Create our pipeline and attach it to our algorithm.
     my_pipe = make_pipeline()
@@ -99,6 +99,7 @@ def make_pipeline():
     """
     Create our pipeline.
     """
+    cur_price = USEquityPricing.close.latest
     vol = SimpleMovingAverage(
         inputs=[USEquityPricing.volume],
         window_length=15,
@@ -120,6 +121,12 @@ def make_pipeline():
     universe = (
             (vol > 250000)
             & (rng > 0.025)
+            & ewma5.notnan() & ewma5.notnull()
+            & rsi.notnan() & rsi.notnull()
+            & high.notnan() & high.notnull()
+            & low.notnan() & low.notnull()
+            & vol.notnan() & vol.notnull()
+            & cur_price.notnan() & cur_price.notnull()
     )
 
     return Pipeline(
@@ -144,13 +151,13 @@ def calc_leverage_settings(c, spy_slope, spy_returns):
     # if SPY is down 2% set algo to favor short
     # Change to SPY Momentum?
     if spy_slope >= -0.02 and spy_returns > -0.006:
-        # log.info("LONG")
+        log.info("LONG")
         c.long_leverage = 0.6
         c.long_cnt = 12
         c.short_leverage = -0.4
         c.short_cnt = 8
     else:
-        # log.info("SHORT")
+        log.info("SHORT")
         c.long_leverage = 0.4
         c.long_cnt = 8
         c.short_leverage = -0.6
@@ -158,80 +165,93 @@ def calc_leverage_settings(c, spy_slope, spy_returns):
 
 
 def get_prices(context, data):
-    spy_price = data.history([context.spy], 'price', 100, '1d')
+    log.info("Getting Positions")
+    spy_price = data.history(assets=[context.spy], fields='price', bar_count=100, frequency='1d')
     spy_slope = slope(spy_price[context.spy])
     spy_current_rets = (spy_price.iloc[-1] - spy_price.iloc[-2]) / spy_price.iloc[-1]
 
     calc_leverage_settings(context, spy_slope, spy_current_rets[context.spy])
 
     # Remove Waits from Output
+    log.info(context.output.head())
     context.output = context.output.drop(context.output.index[[list(context.waits.values())]])
     Universe500 = context.output.index.tolist()
-    intraday_price = data.history(Universe500, 'close', 6, '1m')
-    intraday_ret = (intraday_price.iloc[-1] - intraday_price.iloc[0]) / intraday_price.iloc[0]
+    if len(Universe500) == 0:
+        return
+    # Get today's pricing and volume
+    intraday_price = data.current(Universe500, 'price')
+    vol_data = data.current(Universe500, 'volume')
 
-    vol_data = data.history(Universe500, 'volume', 6, '1m')
-    rvol = vol_data.mean() * 225
-    rvol_df = pd.DataFrame(rvol)
+    rvol_df = vol_data * 255
     rvol_df.columns = ["rvol"]
 
-    today_price = intraday_price.iloc[-1]
-    today_price_df = pd.DataFrame(today_price)
+    today_price_df = intraday_price
     today_price_df.columns = ["cur_price"]
 
-    # Create Today's price Metric
-    intraday_ret_df = pd.DataFrame(intraday_ret)
-    intraday_ret_df.columns = ["intraday_return"]
-
-    # Joins
+    # Joins intraday dfs to Output
     context.output = context.output.join(today_price_df, how='outer')
-    context.output = context.output.join(intraday_ret_df, how='outer')
     context.output = context.output.join(rvol_df, how='outer')
 
-    context.output["per_off_ewma"] = (context.output["ewma5"] - context.output["cur_price"]) / context.output["ewma5"]
+    # Create percent off 5 day ewma metric
+    context.output["per_off_ewma"] = (context.output["ewma5"] - context.output["price"]) / context.output["ewma5"]
 
+    # Clear Shorts and Longs
     context.shorts = []
     context.longs = []
 
-    context.short_cnt -= len(context.shorts)
-    context.long_cnt -= len(context.longs)
-
+    # Add Shorts and Longs to Context
     context.shorts.extend(context.output.query(
-        "rsi > 70 and cur_price < low and rvol > vol"
+        "rsi > 70 and price < low and volume > vol"
     ).nlargest(context.short_cnt, "per_off_ewma").index.tolist())
     context.longs.extend(context.output.query(
-        "rsi < 30 and cur_price > high and rvol > vol"
+        "rsi < 30 and price > high and volume > vol"
     ).nsmallest(context.long_cnt, "per_off_ewma").index.tolist())
     context.short_cnt = len(context.shorts)
     context.long_cnt = len(context.longs)
+    log.info("Longs: {}".format(context.longs))
+    log.info("Shorts: {}".format(context.shorts))
 
 
 def enter_positions(context, data):
     """
     Rebalance daily.
     """
+    log.info("Entering Positions")
     if len(context.longs) > 0:
         long_conc = min(context.long_leverage / (len(context.longs)), context.max_conc)
+    else:
+        long_conc = context.max_conc
     for security in context.longs:
+        price = data.current(security, 'price')
         if data.can_trade(security):
             order_target_percent(
                 security,
-                long_conc
+                long_conc,
+                limit_price=(price * 1.005)
+
             )
     if len(context.shorts) > 0:
         short_conc = max(context.short_leverage / (len(context.shorts)), (-1 * context.max_conc))
+    else:
+        short_conc = (-1 * context.max_conc)
     for security in context.shorts:
+        price = data.current(security, 'price')
         if data.can_trade(security):
             order_target_percent(
                 security,
-                short_conc
+                short_conc,
+                limit_price=(price * 0.995)
             )
 
 
 def take_profits(context, data):
+    log.info("Taking Profits")
+    cancel_open_orders(context, data)
     positions = context.portfolio.positions
-    if len(positions) == 0: return
-    history = data.history(list(positions), 'close', 10, '1m')
+    if len(positions) == 0:
+        log.info("No Open Positions")
+        return
+    history = data.history(list(positions), 'close', 10, '1m').bfill().ffill()
     total_profit = 0
     # if position isn't trending in the right direction and meets Profit/Loss criteria, DUMP
     total_cash = 0
@@ -245,7 +265,7 @@ def take_profits(context, data):
             if slope(history[s][-5:]) > 0: continue
             if history[s][-1] > history[s][-2]: continue
             if profit > context.profit_threshold or profit < context.loss_threshold:
-                order_target(s, 0)
+                order_target(s, 0, limit_price=price * 0.995)
                 wait(context, s, 1)  # start wait
                 total_cash += abs(price * amount)
                 pnl = (amount * (price - positions[s].cost_basis))
@@ -259,7 +279,7 @@ def take_profits(context, data):
             if slope(history[s][-5:]) < 0: continue
             if history[s][-1] < history[s][-2]: continue
             if profit > context.profit_threshold or profit < context.loss_threshold:
-                order_target(s, 0)
+                order_target(s, 0, limit_price=price * 1.005)
                 wait(context, s, 1)  # start wait
                 total_cash += abs(price * amount)
                 pnl = (abs(amount) * (positions[s].cost_basis - price))
@@ -282,7 +302,7 @@ def slope(in_list):  # Return slope of regression line. [Make sure this list con
 def add_to_winners(context, cash, data):
     winners = {}
     positions = context.portfolio.positions
-    history = data.history(list(positions), 'close', 10, '1m')
+    history = data.history(list(positions), 'close', 10, '1m').bfill().ffill()
     for s in positions:
         amount = positions[s].amount
         price = data.current(s, 'price')
@@ -328,6 +348,7 @@ def cancel_open_orders(context, data):
 
 
 def close_positions(context, data):
+    cancel_open_orders(context, data)
     record(leverage=context.account.leverage, long_count=len(context.longs), short_count=len(context.shorts))
     positions = context.portfolio.positions
     for s in positions:
