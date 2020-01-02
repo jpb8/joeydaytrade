@@ -221,39 +221,38 @@ def enter_positions(context, data):
     Rebalance daily.
     """
     log.info("Entering Positions")
-    long_conc = 0
-    short_conc = 0
     if len(context.longs) > 0:
         history = data.history(context.longs, 'close', 9, '1m').bfill().ffill()
         for i, s in enumerate(context.longs):
             if slope(history[s]) < 0:
                 del context.longs[i]
-    if len(context.longs) > 0:
-        long_conc = min(context.long_leverage / (len(context.longs)), context.max_conc)
-    for security in context.longs:
-        if data.can_trade(security):
-            order_target_percent(
-                security,
-                long_conc
-            )
     if len(context.shorts) > 0:
         history = data.history(context.shorts, 'close', 9, '1m').bfill().ffill()
         for i, s in enumerate(context.shorts):
             if slope(history[s]) < 0:
                 del context.shorts[i]
-    if len(context.shorts) > 0:
-        short_conc = max(context.short_leverage / (len(context.shorts)), (-1 * context.max_conc))
+    total_positions = len(context.shorts) + len(context.longs)
+    pos_size = 0
+    if total_positions > 0:
+        pos_size = min((context.max_leverage / total_positions), context.max_conc)
+    for security in context.longs:
+        if data.can_trade(security):
+            order_target_percent(
+                security,
+                pos_size
+            )
     for security in context.shorts:
         if data.can_trade(security):
             order_target_percent(
                 security,
-                short_conc
+                (-1 * pos_size)
             )
 
 
 def get_prices_midday(context, data):
-    spy_price = data.history([sid(8554)], 'price', 100, '1d')
-    spy_slope = slope(spy_price[sid(8554)])
+    log.info("Getting Positions")
+    spy_price = data.history(assets=[context.spy], fields='price', bar_count=100, frequency='1d')
+    spy_slope = slope(spy_price[context.spy])
     spy_current_rets = (spy_price.iloc[-1] - spy_price.iloc[-2]) / spy_price.iloc[-1]
 
     calc_leverage_settings(context, spy_slope, spy_current_rets[sid(8554)])
@@ -303,8 +302,6 @@ def enter_positions_midday(context, data):
     """
     take_profits(context, data)
     avalible_lev = 1 - get_current_leverage(context, data)
-    aval_long_lev = context.long_leverage * avalible_lev
-    aval_short_lev = context.short_leverage * avalible_lev
     if avalible_lev <= 0:
         return
     if len(context.longs) > 0:
@@ -312,26 +309,26 @@ def enter_positions_midday(context, data):
         for i, s in enumerate(context.longs):
             if slope(history[s]) < 0:
                 del context.longs[i]
-    if len(context.longs) > 0:
-        long_conc = min(aval_long_lev / (len(context.longs)), context.max_conc)
-    for security in context.longs:
-        if data.can_trade(security):
-            order_target_percent(
-                security,
-                long_conc
-            )
     if len(context.shorts) > 0:
         history = data.history(context.shorts, 'close', 9, '1m').bfill().ffill()
         for i, s in enumerate(context.shorts):
             if slope(history[s]) < 0:
                 del context.shorts[i]
-    if len(context.shorts) > 0:
-        short_conc = max(aval_short_lev / (len(context.shorts)), (-1 * context.max_conc))
+    total_positions = len(context.shorts) + len(context.longs)
+    pos_size = 0
+    if total_positions > 0:
+        pos_size = min((avalible_lev / total_positions), context.max_conc)
+    for security in context.longs:
+        if data.can_trade(security):
+            order_target_percent(
+                security,
+                pos_size
+            )
     for security in context.shorts:
         if data.can_trade(security):
             order_target_percent(
                 security,
-                short_conc
+                (-1 * pos_size)
             )
 
 
