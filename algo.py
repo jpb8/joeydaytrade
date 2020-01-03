@@ -60,6 +60,7 @@ def initialize(context):
     context.profit_logging = True
 
     # market based long/short percentages
+    context.max_leverage = 1
     context.long_leverage = 0.6
     context.long_cnt = 12
     context.short_leverage = -0.4
