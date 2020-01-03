@@ -26,9 +26,9 @@ def initialize(context):
     # Get Long/Short positions => Enter Positions
     for i in range(1, 5):
         schedule_function(func=get_prices_midday, date_rule=date_rules.every_day(),
-                          time_rule=time_rules.market_open(hours=i, minutes=7))
+                          time_rule=time_rules.market_open(hours=i, minutes=15))
         schedule_function(func=enter_positions_midday, date_rule=date_rules.every_day(),
-                          time_rule=time_rules.market_open(hours=i, minutes=10))
+                          time_rule=time_rules.market_open(hours=i, minutes=19))
 
     # Close all positions and Record Vars
     schedule_function(func=close_positions, date_rule=date_rules.every_day(),
@@ -259,7 +259,8 @@ def get_prices_midday(context, data):
     calc_leverage_settings(context, spy_slope, spy_current_rets[context.spy])
 
     # Remove Waits from Output
-    context.output = context.output.drop(['price', 'volume'], 1)
+    if 'price' in context.output.columns and 'volume' in context.output.columns:
+        context.output = context.output.drop(['price', 'volume'], 1)
     Universe500 = context.output.index.tolist()
     intraday_price = data.current(Universe500, 'price')
 
