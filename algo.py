@@ -256,7 +256,7 @@ def get_prices_midday(context, data):
     spy_slope = slope(spy_price[context.spy])
     spy_current_rets = (spy_price.iloc[-1] - spy_price.iloc[-2]) / spy_price.iloc[-1]
 
-    calc_leverage_settings(context, spy_slope, spy_current_rets[sid(8554)])
+    calc_leverage_settings(context, spy_slope, spy_current_rets[context.spy])
 
     # Remove Waits from Output
     context.output = context.output.drop(['price', 'volume'], 1)
