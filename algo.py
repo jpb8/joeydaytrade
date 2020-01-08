@@ -16,25 +16,30 @@ def initialize(context):
     # Close all positions => Get Long/Short positions => Enter Positions => Cancel unfilled orders
     schedule_function(func=close_positions, date_rule=date_rules.every_day(), time_rule=time_rules.market_open())
     schedule_function(func=get_prices, date_rule=date_rules.every_day(),
-                      time_rule=time_rules.market_open(minutes=7))
+                      time_rule=time_rules.market_open(minutes=5))
     schedule_function(func=enter_positions, date_rule=date_rules.every_day(),
-                      time_rule=time_rules.market_open(minutes=10))
+                      time_rule=time_rules.market_open(minutes=8))
     schedule_function(func=cancel_open_orders, date_rule=date_rules.every_day(),
                       time_rule=time_rules.market_open(minutes=15))
 
     #### Once an Hour ####
     # Get Long/Short positions => Enter Positions
-    for i in range(1, 5):
+    for i in range(1, 3):
         schedule_function(func=get_prices_midday, date_rule=date_rules.every_day(),
-                          time_rule=time_rules.market_open(hours=i, minutes=15))
+                          time_rule=time_rules.market_open(hours=i, minutes=5))
         schedule_function(func=enter_positions_midday, date_rule=date_rules.every_day(),
-                          time_rule=time_rules.market_open(hours=i, minutes=19))
+                          time_rule=time_rules.market_open(hours=i, minutes=8))
 
     # Close all positions and Record Vars
     schedule_function(func=close_positions, date_rule=date_rules.every_day(),
                       time_rule=time_rules.market_close(minutes=15))
     schedule_function(func=my_record_vars, date_rule=date_rules.every_day(),
                       time_rule=time_rules.market_close(minutes=10))
+
+    for i in range(189, 369, 5):  # (low, high, every i minutes)
+        # take profits/losses every hour
+        schedule_function(func=take_profits, date_rule=date_rules.every_day(),
+                          time_rule=time_rules.market_open(minutes=i))
 
     # Set commissions and slippage to 0 to determine pure alpha
     # set_commission(commission.PerShare(cost=0, min_trade_cost=0))
@@ -66,11 +71,6 @@ def initialize(context):
     context.short_leverage = -0.4
     context.short_cnt = 8
     context.max_conc = 0.2
-
-    for i in range(189, 369, 5):  # (low, high, every i minutes)
-        # take profits/losses every hour
-        schedule_function(func=take_profits, date_rule=date_rules.every_day(),
-                          time_rule=time_rules.market_open(minutes=i))
 
     # Create our pipeline and attach it to our algorithm.
     my_pipe = make_pipeline()
@@ -124,8 +124,9 @@ def make_pipeline():
     )
     high = High()
     low = Low()
+    dol_vol = cur_price * vol
     universe = (
-            (vol > 250000)
+            (dol_vol > 2500000)
             & (rng > 0.025)
             & ewma5.notnan() & ewma5.notnull()
             & rsi.notnan() & rsi.notnull()
@@ -238,15 +239,19 @@ def enter_positions(context, data):
         pos_size = min((context.max_leverage / total_positions), context.max_conc)
     for security in context.longs:
         if data.can_trade(security):
+            price = data.current(security, 'price')
             order_target_percent(
                 security,
-                pos_size
+                pos_size,
+                limit_price=(price * 1.001)
             )
     for security in context.shorts:
         if data.can_trade(security):
+            price = data.current(security, 'price')
             order_target_percent(
                 security,
-                (-1 * pos_size)
+                (-1 * pos_size),
+                limit_price=(price * 0.999)
             )
 
 
@@ -322,15 +327,19 @@ def enter_positions_midday(context, data):
         pos_size = min((avalible_lev / total_positions), context.max_conc)
     for security in context.longs:
         if data.can_trade(security):
+            price = data.current(security, 'price')
             order_target_percent(
                 security,
-                pos_size
+                pos_size,
+                limit_price=(price * 1.002)
             )
     for security in context.shorts:
         if data.can_trade(security):
+            price = data.current(security, 'price')
             order_target_percent(
                 security,
-                (-1 * pos_size)
+                (-1 * pos_size),
+                limit_price=(price * 0.998)
             )
 
 
@@ -398,11 +407,12 @@ def add_to_winners(context, cash, data):
     if len(winners) > 0:
         add_amt = cash / max(len(winners), 3)
         for w, l in winners.items():
+            price = data.current(w, 'price')
             if l == 0:
-                order_value(w, add_amt)
+                order_value(w, add_amt, limit_price=price * 1.002)
                 log.info("adding {} to {}".format(add_amt, w))
             else:
-                order_value(w, (-1 * add_amt))
+                order_value(w, (-1 * add_amt), limit_price=price * 0.998)
                 log.info("adding {} to {}".format((-1 * add_amt), w))
 
 
