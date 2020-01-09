@@ -126,6 +126,7 @@ def make_pipeline():
     universe = (
             (dol_vol > 5000000)
             & (rng > 0.02)
+            & ((rsi > 70) | (rsi < 30))
             & ewma5.notnan() & ewma5.notnull()
             & rsi.notnan() & rsi.notnull()
             & high.notnan() & high.notnull()
@@ -217,7 +218,7 @@ def enter_positions(context, data):
             order_target_percent(
                 security,
                 pos_size,
-                limit_price=(price * 1.001)
+                limit_price=(price * 1.0025)
             )
     for security in context.shorts:
         if data.can_trade(security):
@@ -225,7 +226,7 @@ def enter_positions(context, data):
             order_target_percent(
                 security,
                 (-1 * pos_size),
-                limit_price=(price * 0.999)
+                limit_price=(price * 0.9975)
             )
 
 
@@ -258,9 +259,9 @@ def get_prices_midday(context, data):
     context.longs.extend(context.output.query(
         "rsi < 30 and price > high and volume > vol"
     ).nlargest(context.long_cnt, "per_off_ewma").index.tolist())
-    positions = list(context.portfolio.positions)
-    context.shorts = list(set(context.shorts) - set(positions))
-    context.longs = list(set(context.longs) - set(positions))
+    removals = list(context.portfolio.positions) + list(context.waits.keys())
+    context.shorts = list(set(context.shorts) - set(removals))
+    context.longs = list(set(context.longs) - set(removals))
     log.info("Longs: {}".format(context.longs))
     log.info("Shorts: {}".format(context.shorts))
 
@@ -295,7 +296,7 @@ def enter_positions_midday(context, data):
             order_target_percent(
                 security,
                 pos_size,
-                limit_price=(price * 1.002)
+                limit_price=(price * 1.0025)
             )
     for security in context.shorts:
         if data.can_trade(security):
@@ -303,7 +304,7 @@ def enter_positions_midday(context, data):
             order_target_percent(
                 security,
                 (-1 * pos_size),
-                limit_price=(price * 0.998)
+                limit_price=(price * 0.9975)
             )
 
 
