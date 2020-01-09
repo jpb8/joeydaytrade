@@ -16,9 +16,9 @@ def initialize(context):
     # Close all positions => Get Long/Short positions => Enter Positions => Cancel unfilled orders
     schedule_function(func=close_positions, date_rule=date_rules.every_day(), time_rule=time_rules.market_open())
     schedule_function(func=get_prices, date_rule=date_rules.every_day(),
-                      time_rule=time_rules.market_open(minutes=5))
+                      time_rule=time_rules.market_open(minutes=6))
     schedule_function(func=enter_positions, date_rule=date_rules.every_day(),
-                      time_rule=time_rules.market_open(minutes=8))
+                      time_rule=time_rules.market_open(minutes=9))
     schedule_function(func=cancel_open_orders, date_rule=date_rules.every_day(),
                       time_rule=time_rules.market_open(minutes=15))
 
@@ -26,24 +26,24 @@ def initialize(context):
     # Get Long/Short positions => Enter Positions
     for i in range(1, 3):
         schedule_function(func=get_prices_midday, date_rule=date_rules.every_day(),
-                          time_rule=time_rules.market_open(hours=i, minutes=5))
+                          time_rule=time_rules.market_open(hours=i, minutes=6))
         schedule_function(func=enter_positions_midday, date_rule=date_rules.every_day(),
-                          time_rule=time_rules.market_open(hours=i, minutes=8))
+                          time_rule=time_rules.market_open(hours=i, minutes=9))
 
     # Close all positions and Record Vars
     schedule_function(func=close_positions, date_rule=date_rules.every_day(),
                       time_rule=time_rules.market_close(minutes=15))
-    schedule_function(func=my_record_vars, date_rule=date_rules.every_day(),
-                      time_rule=time_rules.market_close(minutes=10))
+
+
+    for i in range(25, 185, 10):  # (low, high, every i minutes)
+        # take profits/losses every hour
+        schedule_function(func=take_profits, date_rule=date_rules.every_day(),
+                          time_rule=time_rules.market_open(minutes=i))
 
     for i in range(189, 369, 5):  # (low, high, every i minutes)
         # take profits/losses every hour
         schedule_function(func=take_profits, date_rule=date_rules.every_day(),
                           time_rule=time_rules.market_open(minutes=i))
-
-    # Set commissions and slippage to 0 to determine pure alpha
-    # set_commission(commission.PerShare(cost=0, min_trade_cost=0))
-    # set_slippage(slippage.FixedSlippage(spread=0))
 
     context.longs = []
     context.shorts = []
@@ -60,17 +60,15 @@ def initialize(context):
     context.hold_max = 3
 
     # Take profit setup
-    context.profit_threshold = .06
-    context.loss_threshold = -.02
+    context.profit_threshold = 0.06
+    context.loss_threshold = -0.01
     context.profit_logging = True
 
     # market based long/short percentages
     context.max_leverage = 1
-    context.long_leverage = 0.6
-    context.long_cnt = 12
-    context.short_leverage = -0.4
+    context.long_cnt = 8
     context.short_cnt = 8
-    context.max_conc = 0.2
+    context.max_conc = 0.3
 
     # Create our pipeline and attach it to our algorithm.
     my_pipe = make_pipeline()
@@ -126,7 +124,7 @@ def make_pipeline():
     low = Low()
     dol_vol = cur_price * vol
     universe = (
-            (dol_vol > 2500000)
+            (dol_vol > 5000000)
             & (rng > 0.025)
             & ewma5.notnan() & ewma5.notnull()
             & rsi.notnan() & rsi.notnull()
@@ -153,34 +151,10 @@ def before_trading_start(context, data):
     context.output = pipeline_output('my_pipeline')
 
 
-def calc_leverage_settings(c, spy_slope, spy_returns):
-    # Set Long/Short Security Numbers and Leverage
-    # if SPY is down 2% set algo to favor short
-    # Change to SPY Momentum?
-    if spy_slope >= -0.02 and spy_returns > -0.006:
-        log.info("LONG")
-        c.long_leverage = 0.6
-        c.long_cnt = 12
-        c.short_leverage = -0.4
-        c.short_cnt = 8
-    else:
-        log.info("SHORT")
-        c.long_leverage = 0.4
-        c.long_cnt = 8
-        c.short_leverage = -0.6
-        c.short_cnt = 12
-
-
 def get_prices(context, data):
     log.info("Getting Positions")
-    spy_price = data.history(assets=[context.spy], fields='price', bar_count=100, frequency='1d')
-    spy_slope = slope(spy_price[context.spy])
-    spy_current_rets = (spy_price.iloc[-1] - spy_price.iloc[-2]) / spy_price.iloc[-1]
-
-    calc_leverage_settings(context, spy_slope, spy_current_rets[context.spy])
 
     # Remove Waits from Output
-    context.output = context.output.drop(context.output.index[[list(context.waits.values())]])
     Universe500 = context.output.index.tolist()
     if len(Universe500) == 0:
         return
@@ -212,8 +186,6 @@ def get_prices(context, data):
     context.longs.extend(context.output.query(
         "rsi < 30 and price > high and volume > vol"
     ).nlargest(context.long_cnt, "per_off_ewma").index.tolist())
-    context.short_cnt = len(context.shorts)
-    context.long_cnt = len(context.longs)
     log.info("Longs: {}".format(context.longs))
     log.info("Shorts: {}".format(context.shorts))
 
@@ -224,14 +196,16 @@ def enter_positions(context, data):
     """
     log.info("Entering Positions")
     if len(context.longs) > 0:
-        history = data.history(context.longs, 'close', 9, '1m').bfill().ffill()
+        history = data.history(context.longs, 'close', 5, '1m').bfill().ffill()
         for i, s in enumerate(context.longs):
-            if slope(history[s]) < 0:
+            if slope(history[s]) < 0 or (history[s].iloc[-1] - history[s].iloc[0]) < 0:
+                log.info("Skipping LONG entry {}".format(s))
                 del context.longs[i]
     if len(context.shorts) > 0:
-        history = data.history(context.shorts, 'close', 9, '1m').bfill().ffill()
+        history = data.history(context.shorts, 'close', 5, '1m').bfill().ffill()
         for i, s in enumerate(context.shorts):
-            if slope(history[s]) < 0:
+            if slope(history[s]) > 0 or (history[s].iloc[-1] - history[s].iloc[0]) > 0:
+                log.info("Skipping SHORT entry {}".format(s))
                 del context.shorts[i]
     total_positions = len(context.shorts) + len(context.longs)
     pos_size = 0
@@ -257,11 +231,6 @@ def enter_positions(context, data):
 
 def get_prices_midday(context, data):
     log.info("Getting Positions")
-    spy_price = data.history(assets=[context.spy], fields='price', bar_count=100, frequency='1d')
-    spy_slope = slope(spy_price[context.spy])
-    spy_current_rets = (spy_price.iloc[-1] - spy_price.iloc[-2]) / spy_price.iloc[-1]
-
-    calc_leverage_settings(context, spy_slope, spy_current_rets[context.spy])
 
     # Remove Waits from Output
     if 'price' in context.output.columns and 'volume' in context.output.columns:
@@ -271,10 +240,8 @@ def get_prices_midday(context, data):
 
     vol_data = data.current(Universe500, 'volume')
     rvol_df = vol_data * 225
-    rvol_df.columns = ['vol_noon']
 
     today_price_df = intraday_price
-    today_price_df.columns = ['price_noon']
 
     # Joins
     context.output = context.output.join(today_price_df, how='outer')
@@ -285,9 +252,6 @@ def get_prices_midday(context, data):
     context.shorts = []
     context.longs = []
 
-    context.short_cnt -= len(context.shorts)
-    context.long_cnt -= len(context.longs)
-
     context.shorts.extend(context.output.query(
         "rsi > 70 and price < low and volume > vol"
     ).nsmallest(context.short_cnt, "per_off_ewma").index.tolist())
@@ -297,8 +261,6 @@ def get_prices_midday(context, data):
     positions = list(context.portfolio.positions)
     context.shorts = list(set(context.shorts) - set(positions))
     context.longs = list(set(context.longs) - set(positions))
-    context.short_cnt = len(context.shorts)
-    context.long_cnt = len(context.longs)
     log.info("Longs: {}".format(context.longs))
     log.info("Shorts: {}".format(context.shorts))
 
@@ -314,12 +276,14 @@ def enter_positions_midday(context, data):
     if len(context.longs) > 0:
         history = data.history(context.longs, 'close', 9, '1m').bfill().ffill()
         for i, s in enumerate(context.longs):
-            if slope(history[s]) < 0:
+            if slope(history[s]) < 0 or (history[s].iloc[-1] - history[s].iloc[0]) < 0:
+                log.info("Skipping LONG entry {}".format(s))
                 del context.longs[i]
     if len(context.shorts) > 0:
         history = data.history(context.shorts, 'close', 9, '1m').bfill().ffill()
         for i, s in enumerate(context.shorts):
-            if slope(history[s]) < 0:
+            if slope(history[s]) > 0 or (history[s].iloc[-1] - history[s].iloc[0]) > 0:
+                log.info("Skipping SHORT entry {}".format(s))
                 del context.shorts[i]
     total_positions = len(context.shorts) + len(context.longs)
     pos_size = 0
@@ -426,22 +390,10 @@ def cancel_open_orders(context, data):
 
 def close_positions(context, data):
     cancel_open_orders(context, data)
-    record(leverage=context.account.leverage, long_count=len(context.longs), short_count=len(context.shorts))
     positions = context.portfolio.positions
     for s in positions:
         order_target_percent(s, 0)
-
-
-def my_record_vars(context, data):
-    """
-    Record variables at the end of each day.
-    """
-    # Run waits
     wait(context)
-    # Record our variables.
-    if context.profit_logging:
-        log.info("Today's shorts: " + ", ".join([short_.symbol for short_ in context.shorts]))
-        log.info("Today's longs: " + ", ".join([long_.symbol for long_ in context.longs]))
 
 
 ######## UTILS #########
