@@ -162,7 +162,7 @@ def get_prices(context, data):
     intraday_price = data.current(Universe500, 'price')
     vol_data = data.current(Universe500, 'volume')
 
-    rvol_df = vol_data * 255
+    rvol_df = vol_data * 100
     rvol_df.columns = ["rvol"]
 
     today_price_df = intraday_price
@@ -239,7 +239,7 @@ def get_prices_midday(context, data):
     intraday_price = data.current(Universe500, 'price')
 
     vol_data = data.current(Universe500, 'volume')
-    rvol_df = vol_data * 225
+    rvol_df = vol_data * 100
 
     today_price_df = intraday_price
 
