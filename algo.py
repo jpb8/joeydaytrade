@@ -125,7 +125,7 @@ def make_pipeline():
     dol_vol = cur_price * vol
     universe = (
             (dol_vol > 5000000)
-            & (rng > 0.025)
+            & (rng > 0.02)
             & ewma5.notnan() & ewma5.notnull()
             & rsi.notnan() & rsi.notnull()
             & high.notnan() & high.notnull()
