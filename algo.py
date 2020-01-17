@@ -155,6 +155,10 @@ def before_trading_start(context, data):
 def get_prices(context, data):
     log.info("Getting Positions")
 
+    # Clear Shorts and Longs
+    context.shorts = []
+    context.longs = []
+
     # Remove Waits from Output
     Universe500 = context.output.index.tolist()
     if len(Universe500) == 0:
@@ -175,10 +179,6 @@ def get_prices(context, data):
 
     # Create percent off 5 day ewma metric
     context.output["per_off_ewma"] = (context.output["price"] - context.output["ewma5"]) / context.output["ewma5"]
-
-    # Clear Shorts and Longs
-    context.shorts = []
-    context.longs = []
 
     # Add Shorts and Longs to Context
     context.shorts.extend(context.output.query(
@@ -232,6 +232,8 @@ def enter_positions(context, data):
 
 def get_prices_midday(context, data):
     log.info("Getting Positions")
+    context.shorts = []
+    context.longs = []
 
     # Remove Waits from Output
     if 'price' in context.output.columns and 'volume' in context.output.columns:
@@ -250,8 +252,6 @@ def get_prices_midday(context, data):
 
     context.output["per_off_ewma"] = (context.output["price"] - context.output["ewma5"]) / context.output["ewma5"]
 
-    context.shorts = []
-    context.longs = []
 
     context.shorts.extend(context.output.query(
         "rsi > 70 and price < low and volume > vol"
