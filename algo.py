@@ -130,12 +130,12 @@ def make_pipeline():
     low = Low()
     dol_vol = cur_price * vol
     velo = Velocity(window_length=100)
-    rsi_over_50 = rsi > 50
-    velo_above_0 = velo > 0
+    rsi = rsi > 50
+    velo = velo > 0
     universe = (
             (dol_vol > 5000000)
             & (rng > 0.02)
-            & ((rsi > 70) | (rsi < 30))
+            # & ((rsi > 70) | (rsi < 30))
             & ewma5.notnan() & ewma5.notnull()
             & rsi.notnan() & rsi.notnull()
             & high.notnan() & high.notnull()
@@ -147,11 +147,11 @@ def make_pipeline():
     return Pipeline(
         columns={
             "ewma5": ewma5,
-            "rsi_over_50": rsi_over_50,
+            "rsi_over_50": rsi,
             "high": high,
             "low": low,
             "vol": vol,
-            "velo_above_0": velo_above_0
+            "velo_above_0": velo
         },
         screen=universe
     )
