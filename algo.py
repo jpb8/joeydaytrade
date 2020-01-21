@@ -34,7 +34,6 @@ def initialize(context):
     schedule_function(func=close_positions, date_rule=date_rules.every_day(),
                       time_rule=time_rules.market_close(minutes=15))
 
-
     for i in range(25, 185, 10):  # (low, high, every i minutes)
         # take profits/losses every hour
         schedule_function(func=take_profits, date_rule=date_rules.every_day(),
@@ -99,6 +98,13 @@ class AveDayRangePerc(CustomFactor):
         out[:] = np.nanmean(range_percent, axis=0)
 
 
+class Velocity(CustomFactor):
+    inputs = [USEquityPricing.close]
+
+    def compute(self, today, asset_ids, out, close_prices):
+        out[:] = (close_prices[-1] - np.nanmean(close_prices)) / close_prices[-1]
+
+
 def make_pipeline():
     """
     Create our pipeline.
@@ -123,6 +129,9 @@ def make_pipeline():
     high = High()
     low = Low()
     dol_vol = cur_price * vol
+    velo = Velocity(window_length=100)
+    rsi_over_50 = rsi > 50
+    velo_above_0 = velo > 0
     universe = (
             (dol_vol > 5000000)
             & (rng > 0.02)
@@ -138,10 +147,11 @@ def make_pipeline():
     return Pipeline(
         columns={
             "ewma5": ewma5,
-            "rsi": rsi,
+            "rsi_over_50": rsi_over_50,
             "high": high,
             "low": low,
-            "vol": vol
+            "vol": vol,
+            "velo_above_0": velo_above_0
         },
         screen=universe
     )
@@ -182,11 +192,16 @@ def get_prices(context, data):
 
     # Add Shorts and Longs to Context
     context.shorts.extend(context.output.query(
-        "rsi > 70 and price < low and volume > vol"
+        "rsi_over_50 == True and price < low and volume > vol and velo_above_0 == False"
     ).nsmallest(context.short_cnt, "per_off_ewma").index.tolist())
     context.longs.extend(context.output.query(
-        "rsi < 30 and price > high and volume > vol"
+        "rsi_over_50 == False and price > high and volume > vol and velo_above_0 == True"
     ).nlargest(context.long_cnt, "per_off_ewma").index.tolist())
+    if 'velo_above_0' in context.output.columns:
+        context.output = context.output.drop(['velo_above_0'], 1)
+    removals = list(context.waits.keys())
+    context.shorts = list(set(context.shorts) - set(removals))
+    context.longs = list(set(context.longs) - set(removals))
     log.info("Longs: {}".format(context.longs))
     log.info("Shorts: {}".format(context.shorts))
 
@@ -252,12 +267,11 @@ def get_prices_midday(context, data):
 
     context.output["per_off_ewma"] = (context.output["price"] - context.output["ewma5"]) / context.output["ewma5"]
 
-
     context.shorts.extend(context.output.query(
-        "rsi > 70 and price < low and volume > vol"
+        "rsi_over_50 == True and price < low and volume > vol"
     ).nsmallest(context.short_cnt, "per_off_ewma").index.tolist())
     context.longs.extend(context.output.query(
-        "rsi < 30 and price > high and volume > vol"
+        "rsi_over_50 == False and price > high and volume > vol"
     ).nlargest(context.long_cnt, "per_off_ewma").index.tolist())
     removals = list(context.portfolio.positions) + list(context.waits.keys())
     context.shorts = list(set(context.shorts) - set(removals))
