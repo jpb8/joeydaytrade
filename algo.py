@@ -135,13 +135,8 @@ def make_pipeline():
     universe = (
             (dol_vol > 5000000)
             & (rng > 0.02)
+            & (cur_price > 1)
             # & ((rsi > 70) | (rsi < 30))
-            & ewma5.notnan() & ewma5.notnull()
-            & rsi.notnan() & rsi.notnull()
-            & high.notnan() & high.notnull()
-            & low.notnan() & low.notnull()
-            & vol.notnan() & vol.notnull()
-            & cur_price.notnan() & cur_price.notnull()
     )
 
     return Pipeline(
