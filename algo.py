@@ -34,7 +34,7 @@ def initialize(context):
     schedule_function(func=close_positions, date_rule=date_rules.every_day(),
                       time_rule=time_rules.market_close(minutes=15))
 
-    for i in range(25, 185, 10):  # (low, high, every i minutes)
+    for i in range(35, 185, 10):  # (low, high, every i minutes)
         # take profits/losses every hour
         schedule_function(func=take_profits, date_rule=date_rules.every_day(),
                           time_rule=time_rules.market_open(minutes=i))
@@ -228,7 +228,7 @@ def enter_positions(context, data):
             order_target_percent(
                 security,
                 pos_size,
-                limit_price=(price * 1.0025)
+                stop_price=(price * 1.003)
             )
     for security in context.shorts:
         if data.can_trade(security):
@@ -236,7 +236,7 @@ def enter_positions(context, data):
             order_target_percent(
                 security,
                 (-1 * pos_size),
-                limit_price=(price * 0.9975)
+                stop_price=(price * 0.997)
             )
 
 
@@ -305,7 +305,7 @@ def enter_positions_midday(context, data):
             order_target_percent(
                 security,
                 pos_size,
-                limit_price=(price * 1.0025)
+                stop_price=(price * 1.003)
             )
     for security in context.shorts:
         if data.can_trade(security):
@@ -313,7 +313,7 @@ def enter_positions_midday(context, data):
             order_target_percent(
                 security,
                 (-1 * pos_size),
-                limit_price=(price * 0.9975)
+                stop_price=(price * 0.997)
             )
 
 
