@@ -30,6 +30,9 @@ def initialize(context):
         schedule_function(func=enter_positions_midday, date_rule=date_rules.every_day(),
                           time_rule=time_rules.market_open(hours=i, minutes=9))
 
+    schedule_function(func=add_avalible_lev_to_winners, date_rule=date_rules.every_day(),
+                      time_rule=time_rules.market_open(hours=2, minutes=15))
+
     # Close all positions and Record Vars
     schedule_function(func=close_positions, date_rule=date_rules.every_day(),
                       time_rule=time_rules.market_close(minutes=15))
@@ -59,7 +62,7 @@ def initialize(context):
     context.hold_max = 3
 
     # Take profit setup
-    context.profit_threshold = 0.06
+    context.profit_threshold = 0.08
     context.loss_threshold = -0.01
     context.profit_logging = True
 
@@ -67,7 +70,7 @@ def initialize(context):
     context.max_leverage = 1
     context.long_cnt = 8
     context.short_cnt = 8
-    context.max_conc = 0.3
+    context.max_conc = 0.5
 
     # Create our pipeline and attach it to our algorithm.
     my_pipe = make_pipeline()
@@ -194,6 +197,8 @@ def get_prices(context, data):
     ).nlargest(context.long_cnt, "per_off_ewma").index.tolist())
     if 'velo_above_0' in context.output.columns:
         context.output = context.output.drop(['velo_above_0'], 1)
+    if 'price' in context.output.columns and 'volume' in context.output.columns:
+        context.output = context.output.drop(['price', 'volume'], 1)
     removals = list(context.waits.keys())
     context.shorts = list(set(context.shorts) - set(removals))
     context.longs = list(set(context.longs) - set(removals))
@@ -207,13 +212,13 @@ def enter_positions(context, data):
     """
     log.info("Entering Positions")
     if len(context.longs) > 0:
-        history = data.history(context.longs, 'close', 5, '1m').bfill().ffill()
+        history = data.history(context.longs, 'close', 8, '1m').bfill().ffill()
         for i, s in enumerate(context.longs):
             if slope(history[s]) < 0 or (history[s].iloc[-1] - history[s].iloc[0]) < 0:
                 log.info("Skipping LONG entry {}".format(s))
                 del context.longs[i]
     if len(context.shorts) > 0:
-        history = data.history(context.shorts, 'close', 5, '1m').bfill().ffill()
+        history = data.history(context.shorts, 'close', 8, '1m').bfill().ffill()
         for i, s in enumerate(context.shorts):
             if slope(history[s]) > 0 or (history[s].iloc[-1] - history[s].iloc[0]) > 0:
                 log.info("Skipping SHORT entry {}".format(s))
@@ -228,7 +233,7 @@ def enter_positions(context, data):
             order_target_percent(
                 security,
                 pos_size,
-                stop_price=(price * 1.003)
+                stop_price=(price * 1.0025)
             )
     for security in context.shorts:
         if data.can_trade(security):
@@ -236,7 +241,7 @@ def enter_positions(context, data):
             order_target_percent(
                 security,
                 (-1 * pos_size),
-                stop_price=(price * 0.997)
+                stop_price=(price * 0.9975)
             )
 
 
@@ -305,7 +310,7 @@ def enter_positions_midday(context, data):
             order_target_percent(
                 security,
                 pos_size,
-                stop_price=(price * 1.003)
+                stop_price=(price * 1.0025)
             )
     for security in context.shorts:
         if data.can_trade(security):
@@ -313,7 +318,7 @@ def enter_positions_midday(context, data):
             order_target_percent(
                 security,
                 (-1 * pos_size),
-                stop_price=(price * 0.997)
+                stop_price=(price * 0.9975)
             )
 
 
@@ -383,11 +388,41 @@ def add_to_winners(context, cash, data):
         for w, l in winners.items():
             price = data.current(w, 'price')
             if l == 0:
-                order_value(w, add_amt, limit_price=price * 1.002)
+                order_value(w, add_amt, stop_price=price * 1.002)
                 log.info("adding {} to {}".format(add_amt, w))
             else:
-                order_value(w, (-1 * add_amt), limit_price=price * 0.998)
+                order_value(w, (-1 * add_amt), stop_price=price * 0.998)
                 log.info("adding {} to {}".format((-1 * add_amt), w))
+
+def add_avalible_lev_to_winners(context, data):
+    avalible_lev = 1 - get_current_leverage(context, data)
+    positions = context.portfolio.positions
+    if avalible_lev < 0.1 or len(positions) == 0:
+        return
+    history = data.history(list(positions), 'close', 10, '1m').bfill().ffill()
+    winners = {}
+    for s in positions:
+        amount = positions[s].amount
+        price = data.current(s, 'price')
+        profit = (amount / abs(amount)) * ((price / positions[s].cost_basis) - 1)
+        if profit > 0.01:
+            if amount > 0:
+                if slope(history[s]) > 0:
+                    winners[s] = 0
+            else:
+                if slope(history[s]) < 0:
+                    winners[s] = 1
+    if len(winners) > 0:
+        pos_size = min((avalible_lev/len(winners)), context.max_conc)
+        for w, l in winners.items():
+            if l == 0:
+                order_percent(w, pos_size)
+                if context.profit_logging:
+                    log.info("adding {} to {}".format(pos_size, w))
+            else:
+                order_percent(w, (-1*pos_size))
+                if context.profit_logging:
+                    log.info("adding {} to {}".format((-1*pos_size), w))
 
 
 def cancel_open_orders(context, data):
