@@ -20,7 +20,7 @@ def initialize(context):
     schedule_function(func=enter_positions, date_rule=date_rules.every_day(),
                       time_rule=time_rules.market_open(minutes=9))
     schedule_function(func=cancel_open_orders, date_rule=date_rules.every_day(),
-                      time_rule=time_rules.market_open(minutes=15))
+                      time_rule=time_rules.market_open(minutes=25))
 
     #### Once an Hour ####
     # Get Long/Short positions => Enter Positions
@@ -31,7 +31,7 @@ def initialize(context):
                           time_rule=time_rules.market_open(hours=i, minutes=9))
 
     schedule_function(func=add_avalible_lev_to_winners, date_rule=date_rules.every_day(),
-                      time_rule=time_rules.market_open(hours=2, minutes=15))
+                      time_rule=time_rules.market_open(hours=2, minutes=45))
 
     # Close all positions and Record Vars
     schedule_function(func=close_positions, date_rule=date_rules.every_day(),
