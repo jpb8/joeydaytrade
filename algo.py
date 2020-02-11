@@ -31,11 +31,11 @@ def initialize(context):
                           time_rule=time_rules.market_open(hours=i, minutes=9))
 
     schedule_function(func=add_avalible_lev_to_winners, date_rule=date_rules.every_day(),
-                      time_rule=time_rules.market_open(hours=2, minutes=45))
+                      time_rule=time_rules.market_open(hours=2, minutes=46))
 
     # Close all positions and Record Vars
     schedule_function(func=close_positions, date_rule=date_rules.every_day(),
-                      time_rule=time_rules.market_close(minutes=15))
+                      time_rule=time_rules.market_close(minutes=30))
 
     for i in range(35, 185, 10):  # (low, high, every i minutes)
         # take profits/losses every hour
@@ -132,7 +132,7 @@ def make_pipeline():
     high = High()
     low = Low()
     dol_vol = cur_price * vol
-    velo = Velocity(window_length=100)
+    velo = Velocity(window_length=50)
     rsi = rsi > 50
     velo = velo > 0
     universe = (
