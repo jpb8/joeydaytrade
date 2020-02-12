@@ -180,7 +180,7 @@ def get_prices(context, data):
     if len(context.universe) == 0:
         return
     # Get today's pricing and volume
-    intraday_price = data.current(context.universe., 'price')
+    intraday_price = data.current(context.universe, 'price')
     vol_data = data.current(context.universe, 'volume')
 
     rvol_df = vol_data * 100
