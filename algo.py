@@ -228,8 +228,7 @@ def enter_positions(context, data):
         avalible_lev = context.max_leverage
     else:
         take_profits(context, data)
-        context.exposure.update(context, data)
-        avalible_lev = context.max_leverage - context.exposure.get_current_leverage(context)
+        avalible_lev = context.max_leverage - get_current_leverage(context, data)
     if avalible_lev <= 0.1:
         return
     if len(context.longs) > 0:
@@ -315,8 +314,7 @@ def take_profits(context, data):
 
 def retry_skipped(context, data):
     cancel_open_orders(context, data)
-    context.exposure.update(context, data)
-    avalible_lev = 1 - context.exposure.get_current_leverage(context)
+    avalible_lev = 1 - get_current_leverage(context, data)
     if avalible_lev <= 0.1:
         return
     long_enters = []
