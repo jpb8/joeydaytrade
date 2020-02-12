@@ -35,20 +35,20 @@ def initialize(context):
 
     for i in range(36, 66, 10):  # (low, high, every i minutes)
         # take profits/losses every hour
-        schedule_function(func=take_profits, date_rule=date_rules.every_day(),
+        schedule_function(func=retry_skipped, date_rule=date_rules.every_day(),
                           time_rule=time_rules.market_open(minutes=i))
 
-    for i in range(80, 180, 10):  # (low, high, every i minutes)
+    for i in range(76, 176, 10):  # (low, high, every i minutes)
         # take profits/losses every hour
         schedule_function(func=retry_skipped, date_rule=date_rules.every_day(),
                           time_rule=time_rules.market_open(minutes=i))
 
-    for i in range(200, 240, 10):  # (low, high, every i minutes)
+    for i in range(196, 236, 10):  # (low, high, every i minutes)
         # take profits/losses every hour
         schedule_function(func=retry_skipped, date_rule=date_rules.every_day(),
                           time_rule=time_rules.market_open(minutes=i))
 
-    for i in range(260, 369, 5):  # (low, high, every i minutes)
+    for i in range(256, 369, 5):  # (low, high, every i minutes)
         # take profits/losses every hour
         schedule_function(func=retry_skipped, date_rule=date_rules.every_day(),
                           time_rule=time_rules.market_open(minutes=i))
