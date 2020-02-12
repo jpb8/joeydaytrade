@@ -15,19 +15,15 @@ def initialize(context):
     #### Moring ####
     # Close all positions => Get Long/Short positions => Enter Positions => Cancel unfilled orders
     schedule_function(func=close_positions, date_rule=date_rules.every_day(), time_rule=time_rules.market_open())
-    schedule_function(func=get_prices, date_rule=date_rules.every_day(),
-                      time_rule=time_rules.market_open(minutes=6))
-    schedule_function(func=enter_positions, date_rule=date_rules.every_day(),
-                      time_rule=time_rules.market_open(minutes=9))
     schedule_function(func=cancel_open_orders, date_rule=date_rules.every_day(),
                       time_rule=time_rules.market_open(minutes=25))
 
     #### Once an Hour ####
     # Get Long/Short positions => Enter Positions
-    for i in range(1, 3):
-        schedule_function(func=get_prices_midday, date_rule=date_rules.every_day(),
-                          time_rule=time_rules.market_open(hours=i, minutes=6))
-        schedule_function(func=enter_positions_midday, date_rule=date_rules.every_day(),
+    for i in range(0, 3):
+        schedule_function(func=get_prices, date_rule=date_rules.every_day(),
+                          time_rule=time_rules.market_open(hours=i, minutes=7))
+        schedule_function(func=enter_positions, date_rule=date_rules.every_day(),
                           time_rule=time_rules.market_open(hours=i, minutes=9))
 
     schedule_function(func=add_avalible_lev_to_winners, date_rule=date_rules.every_day(),
@@ -37,29 +33,42 @@ def initialize(context):
     schedule_function(func=close_positions, date_rule=date_rules.every_day(),
                       time_rule=time_rules.market_close(minutes=30))
 
-    for i in range(35, 185, 10):  # (low, high, every i minutes)
+    for i in range(36, 66, 10):  # (low, high, every i minutes)
         # take profits/losses every hour
         schedule_function(func=take_profits, date_rule=date_rules.every_day(),
                           time_rule=time_rules.market_open(minutes=i))
 
-    for i in range(189, 369, 5):  # (low, high, every i minutes)
+    for i in range(80, 180, 10):  # (low, high, every i minutes)
         # take profits/losses every hour
-        schedule_function(func=take_profits, date_rule=date_rules.every_day(),
+        schedule_function(func=retry_skipped, date_rule=date_rules.every_day(),
+                          time_rule=time_rules.market_open(minutes=i))
+
+    for i in range(200, 240, 10):  # (low, high, every i minutes)
+        # take profits/losses every hour
+        schedule_function(func=retry_skipped, date_rule=date_rules.every_day(),
+                          time_rule=time_rules.market_open(minutes=i))
+
+    for i in range(260, 369, 5):  # (low, high, every i minutes)
+        # take profits/losses every hour
+        schedule_function(func=retry_skipped, date_rule=date_rules.every_day(),
                           time_rule=time_rules.market_open(minutes=i))
 
     context.longs = []
     context.shorts = []
+    context.universe = []
+    context.long_misses = []
+    context.short_misses = []
 
     # If we take a loss on trade, dont trade that security for X days
     context.waits = {}
     context.waits_max = 5  # trading days
-    context.max_lev = 0.2
 
     context.spy = symbol('SPY')
 
     # Hold Setups
     context.holds = {}
     context.hold_max = 3
+    context.today_entries = {}
 
     # Take profit setup
     context.profit_threshold = 0.08
@@ -67,10 +76,10 @@ def initialize(context):
     context.profit_logging = True
 
     # market based long/short percentages
-    context.max_leverage = 1
-    context.long_cnt = 8
-    context.short_cnt = 8
-    context.max_conc = 0.5
+    context.max_leverage = 1.0
+    context.long_cnt = 6
+    context.short_cnt = 6
+    context.max_conc = 0.4
 
     # Create our pipeline and attach it to our algorithm.
     my_pipe = make_pipeline()
@@ -113,73 +122,69 @@ def make_pipeline():
     Create our pipeline.
     """
     cur_price = USEquityPricing.close.latest
+    rng = AveDayRangePerc(
+        window_length=15
+    )
     vol = SimpleMovingAverage(
         inputs=[USEquityPricing.volume],
-        window_length=15,
+        window_length=15
     )
-    rng = AveDayRangePerc(
-        window_length=25
-    )
+    dollar_vol = cur_price * vol
+    mask = (cur_price > 1) & (rng > 0.02) & (dollar_vol > 5000000)
     ewma5 = ExponentialWeightedMovingAverage.from_span(
         inputs=[USEquityPricing.close],
         window_length=5,
-        span=2.5
+        span=2.5,
+        mask=mask
     )
     rsi = RSI(
         inputs=[USEquityPricing.close],
-        window_length=3
+        window_length=3,
+        mask=mask
     )
-    high = High()
-    low = Low()
-    dol_vol = cur_price * vol
-    velo = Velocity(window_length=50)
-    rsi = rsi > 50
-    velo = velo > 0
-    universe = (
-            (dol_vol > 5000000)
-            & (rng > 0.02)
-            & (cur_price > 1)
-            # & ((rsi > 70) | (rsi < 30))
-    )
+    high = High(mask=mask)
+    low = Low(mask=mask)
+    velo = Velocity(window_length=50, mask=mask)
 
     return Pipeline(
         columns={
             "ewma5": ewma5,
-            "rsi_over_50": rsi,
+            "rsi": rsi,
             "high": high,
             "low": low,
             "vol": vol,
-            "velo_above_0": velo
+            "velo": velo
         },
-        screen=universe
+        screen=mask
     )
 
 
 def before_trading_start(context, data):
     # Gets our pipeline output every day.
+    context.today_entries = {}
     context.output = pipeline_output('my_pipeline')
+    context.universe = context.output.index.tolist()
+    context.long_cnt = 6
+    context.short_cnt = 6
+    context.long_misses = []
+    context.short_misses = []
 
 
 def get_prices(context, data):
     log.info("Getting Positions")
-
-    # Clear Shorts and Longs
-    context.shorts = []
-    context.longs = []
+    if pd.Series(['price', 'volume', 'per_off_ewma']).isin(context.output.columns).all():
+        context.output = context.output.drop(['price', 'volume', 'per_off_ewma'], 1)
 
     # Remove Waits from Output
-    Universe500 = context.output.index.tolist()
-    if len(Universe500) == 0:
+
+    if len(context.universe) == 0:
         return
     # Get today's pricing and volume
-    intraday_price = data.current(Universe500, 'price')
-    vol_data = data.current(Universe500, 'volume')
+    intraday_price = data.current(context.universe., 'price')
+    vol_data = data.current(context.universe, 'volume')
 
     rvol_df = vol_data * 100
-    rvol_df.columns = ["rvol"]
-
     today_price_df = intraday_price
-    today_price_df.columns = ["cur_price"]
 
     # Joins intraday dfs to Output
     context.output = context.output.join(today_price_df, how='outer')
@@ -188,20 +193,31 @@ def get_prices(context, data):
     # Create percent off 5 day ewma metric
     context.output["per_off_ewma"] = (context.output["price"] - context.output["ewma5"]) / context.output["ewma5"]
 
+    context.shorts = []
+    context.longs = []
+    if get_datetime().hour < 15:
+        short_query = "rsi > 50 and price < low and volume > vol and velo < 0 and per_off_ewma < -0.05"
+        long_query = "rsi < 50 and price > high and volume > vol and velo > 0 and per_off_ewma > 0.05"
+        remove_list = list(context.waits.keys())
+    else:
+        remove_list = list(context.portfolio.positions) + list(context.waits.keys()) + list(
+            context.today_entries.keys())
+        short_query = "rsi > 50 and price < low and volume > vol and per_off_ewma < -0.05"
+        long_query = "rsi < 50 and price > high and volume > vol and per_off_ewma > 0.05"
+
     # Add Shorts and Longs to Context
     context.shorts.extend(context.output.query(
-        "rsi_over_50 == True and price < low and volume > vol and velo_above_0 == False"
+        short_query
     ).nsmallest(context.short_cnt, "per_off_ewma").index.tolist())
     context.longs.extend(context.output.query(
-        "rsi_over_50 == False and price > high and volume > vol and velo_above_0 == True"
+        long_query
     ).nlargest(context.long_cnt, "per_off_ewma").index.tolist())
     if 'velo_above_0' in context.output.columns:
         context.output = context.output.drop(['velo_above_0'], 1)
     if 'price' in context.output.columns and 'volume' in context.output.columns:
         context.output = context.output.drop(['price', 'volume'], 1)
-    removals = list(context.waits.keys())
-    context.shorts = list(set(context.shorts) - set(removals))
-    context.longs = list(set(context.longs) - set(removals))
+    context.shorts = list(set(context.shorts) - set(remove_list))
+    context.longs = list(set(context.longs) - set(remove_list))
     log.info("Longs: {}".format(context.longs))
     log.info("Shorts: {}".format(context.shorts))
 
@@ -211,97 +227,27 @@ def enter_positions(context, data):
     Rebalance daily.
     """
     log.info("Entering Positions")
-    if len(context.longs) > 0:
-        history = data.history(context.longs, 'close', 8, '1m').bfill().ffill()
-        for i, s in enumerate(context.longs):
-            if slope(history[s]) < 0 or (history[s].iloc[-1] - history[s].iloc[0]) < 0:
-                log.info("Skipping LONG entry {}".format(s))
-                del context.longs[i]
-    if len(context.shorts) > 0:
-        history = data.history(context.shorts, 'close', 8, '1m').bfill().ffill()
-        for i, s in enumerate(context.shorts):
-            if slope(history[s]) > 0 or (history[s].iloc[-1] - history[s].iloc[0]) > 0:
-                log.info("Skipping SHORT entry {}".format(s))
-                del context.shorts[i]
-    total_positions = len(context.shorts) + len(context.longs)
-    pos_size = 0
-    if total_positions > 0:
-        pos_size = min((context.max_leverage / total_positions), context.max_conc)
-    for security in context.longs:
-        if data.can_trade(security):
-            price = data.current(security, 'price')
-            order_target_percent(
-                security,
-                pos_size,
-                stop_price=(price * 1.0025)
-            )
-    for security in context.shorts:
-        if data.can_trade(security):
-            price = data.current(security, 'price')
-            order_target_percent(
-                security,
-                (-1 * pos_size),
-                stop_price=(price * 0.9975)
-            )
-
-
-def get_prices_midday(context, data):
-    log.info("Getting Positions")
-    context.shorts = []
-    context.longs = []
-
-    # Remove Waits from Output
-    if 'price' in context.output.columns and 'volume' in context.output.columns:
-        context.output = context.output.drop(['price', 'volume'], 1)
-    Universe500 = context.output.index.tolist()
-    intraday_price = data.current(Universe500, 'price')
-
-    vol_data = data.current(Universe500, 'volume')
-    rvol_df = vol_data * 100
-
-    today_price_df = intraday_price
-
-    # Joins
-    context.output = context.output.join(today_price_df, how='outer')
-    context.output = context.output.join(rvol_df, how='outer')
-
-    context.output["per_off_ewma"] = (context.output["price"] - context.output["ewma5"]) / context.output["ewma5"]
-
-    context.shorts.extend(context.output.query(
-        "rsi_over_50 == True and price < low and volume > vol"
-    ).nsmallest(context.short_cnt, "per_off_ewma").index.tolist())
-    context.longs.extend(context.output.query(
-        "rsi_over_50 == False and price > high and volume > vol"
-    ).nlargest(context.long_cnt, "per_off_ewma").index.tolist())
-    removals = list(context.portfolio.positions) + list(context.waits.keys())
-    context.shorts = list(set(context.shorts) - set(removals))
-    context.longs = list(set(context.longs) - set(removals))
-    log.info("Longs: {}".format(context.longs))
-    log.info("Shorts: {}".format(context.shorts))
-
-
-def enter_positions_midday(context, data):
-    """
-    Take profits from existing
-    """
-    take_profits(context, data)
-    avalible_lev = 1 - get_current_leverage(context, data)
-    if avalible_lev <= 0:
+    if get_datetime().hour < 15:
+        avalible_lev = context.max_leverage
+    else:
+        take_profits(context, data)
+        context.exposure.update(context, data)
+        avalible_lev = context.max_leverage - context.exposure.get_current_leverage(context)
+    if avalible_lev <= 0.1:
         return
     if len(context.longs) > 0:
-        history = data.history(context.longs, 'close', 9, '1m').bfill().ffill()
+        history = data.history(context.longs, 'close', 7, '1m').bfill().ffill()
         for i, s in enumerate(context.longs):
             if slope(history[s]) < 0 or (history[s].iloc[-1] - history[s].iloc[0]) < 0:
-                log.info("Skipping LONG entry {}".format(s))
                 del context.longs[i]
+                add_to_misses(context, s, False)
     if len(context.shorts) > 0:
-        history = data.history(context.shorts, 'close', 9, '1m').bfill().ffill()
+        history = data.history(context.shorts, 'close', 7, '1m').bfill().ffill()
         for i, s in enumerate(context.shorts):
             if slope(history[s]) > 0 or (history[s].iloc[-1] - history[s].iloc[0]) > 0:
-                log.info("Skipping SHORT entry {}".format(s))
                 del context.shorts[i]
+                add_to_misses(context, s, True)
     total_positions = len(context.shorts) + len(context.longs)
-    pos_size = 0
     if total_positions > 0:
         pos_size = min((avalible_lev / total_positions), context.max_conc)
     for security in context.longs:
@@ -312,6 +258,7 @@ def enter_positions_midday(context, data):
                 pos_size,
                 stop_price=(price * 1.0025)
             )
+            context.today_entries[security] = price
     for security in context.shorts:
         if data.can_trade(security):
             price = data.current(security, 'price')
@@ -320,6 +267,7 @@ def enter_positions_midday(context, data):
                 (-1 * pos_size),
                 stop_price=(price * 0.9975)
             )
+            context.today_entries[security] = price
 
 
 def take_profits(context, data):
@@ -342,7 +290,7 @@ def take_profits(context, data):
             if slope(history[s]) > 0: continue
             if slope(history[s][-5:]) > 0: continue
             if profit > context.profit_threshold or profit < context.loss_threshold:
-                order_target(s, 0, limit_price=price * 0.998)
+                order_target(s, 0)
                 wait(context, s, 1)  # start wait
                 total_cash += abs(price * amount)
                 pnl = (amount * (price - positions[s].cost_basis))
@@ -355,7 +303,7 @@ def take_profits(context, data):
             if slope(history[s]) < 0: continue
             if slope(history[s][-5:]) < 0: continue
             if profit > context.profit_threshold or profit < context.loss_threshold:
-                order_target(s, 0, limit_price=price * 1.002)
+                order_target(s, 0)
                 wait(context, s, 1)  # start wait
                 total_cash += abs(price * amount)
                 pnl = (abs(amount) * (positions[s].cost_basis - price))
@@ -367,6 +315,49 @@ def take_profits(context, data):
     if total_cash != 0:
         add_to_winners(context, total_cash, data)
 
+
+def retry_skipped(context, data):
+    cancel_open_orders(context, data)
+    context.exposure.update(context, data)
+    avalible_lev = 1 - context.exposure.get_current_leverage(context)
+    if avalible_lev <= 0.1:
+        return
+    long_enters = []
+    short_enters = []
+    if len(context.long_misses) > 0:
+        history = data.history(context.long_misses, 'close', 9, '1m').bfill().ffill()
+        for i, s in enumerate(context.long_misses):
+            if slope(history[s]) > 0 and (history[s].iloc[-1] - history[s].iloc[0]) > 0:
+                del context.long_misses[i]
+                long_enters.append(s)
+    if len(context.short_misses) > 0:
+        history = data.history(context.short_misses, 'close', 9, '1m').bfill().ffill()
+        for i, s in enumerate(context.short_misses):
+            if slope(history[s]) < 0 and (history[s].iloc[-1] - history[s].iloc[0]) < 0:
+                del context.short_misses[i]
+                short_enters.append(s)
+    total_positions = len(context.short_misses) + len(context.long_misses)
+    if total_positions > 0:
+        pos_size = min((avalible_lev/total_positions), context.max_conc)
+    for security in context.long_misses:
+        if data.can_trade(security):
+            price = data.current(security, 'price')
+            order_target_percent(
+                security,
+                pos_size,
+                stop_price = (price * 1.0025)
+            )
+            context.today_entries[security] = price
+    for security in context.short_misses:
+        if data.can_trade(security):
+            price = data.current(security, 'price')
+            order_target_percent(
+                security,
+                (-1 * pos_size),
+                stop_price = (price * 0.9975)
+            )
+            context.today_entries[security] = price
+    take_profits(context, data)
 
 def add_to_winners(context, cash, data):
     winners = {}
@@ -500,3 +491,12 @@ def wait(c, sec=None, action=None):
                 del c.waits[sec]
             else:
                 c.waits[sec] += 1  # increment
+
+
+def add_to_misses(context, s, short):
+    if short:
+        if s not in context.short_misses:
+            context.short_misses.append(s)
+    else:
+        if s not in context.long_misses:
+            context.long_misses.append(s)
