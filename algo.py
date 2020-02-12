@@ -79,7 +79,7 @@ def initialize(context):
     context.max_leverage = 1.0
     context.long_cnt = 6
     context.short_cnt = 6
-    context.max_conc = 0.4
+    context.max_conc = 0.33
 
     # Create our pipeline and attach it to our algorithm.
     my_pipe = make_pipeline()
@@ -87,7 +87,7 @@ def initialize(context):
 
 
 class High(CustomFactor):
-    window_length = 5
+    window_length = 10
     inputs = [USEquityPricing.close]
 
     def compute(self, today, assets, out, close_prices):
@@ -95,7 +95,7 @@ class High(CustomFactor):
 
 
 class Low(CustomFactor):
-    window_length = 5
+    window_length = 10
     inputs = [USEquityPricing.close]
 
     def compute(self, today, assets, out, close_prices):
@@ -196,14 +196,15 @@ def get_prices(context, data):
     context.shorts = []
     context.longs = []
     if get_datetime().hour < 15:
+        log.info(get_datetime().hour)
         short_query = "rsi > 50 and price < low and volume > vol and velo < 0 and per_off_ewma < -0.05"
         long_query = "rsi < 50 and price > high and volume > vol and velo > 0 and per_off_ewma > 0.05"
         remove_list = list(context.waits.keys())
     else:
         remove_list = list(context.portfolio.positions) + list(context.waits.keys()) + list(
             context.today_entries.keys())
-        short_query = "rsi > 50 and price < low and volume > vol and per_off_ewma < -0.05"
-        long_query = "rsi < 50 and price > high and volume > vol and per_off_ewma > 0.05"
+        short_query = "rsi > 50 and price < low and volume > vol and velo < 0 and per_off_ewma < -0.05"
+        long_query = "rsi < 50 and price > high and volume > vol and velo > 0 and per_off_ewma > 0.05"
 
     # Add Shorts and Longs to Context
     context.shorts.extend(context.output.query(
@@ -212,10 +213,6 @@ def get_prices(context, data):
     context.longs.extend(context.output.query(
         long_query
     ).nlargest(context.long_cnt, "per_off_ewma").index.tolist())
-    if 'velo_above_0' in context.output.columns:
-        context.output = context.output.drop(['velo_above_0'], 1)
-    if 'price' in context.output.columns and 'volume' in context.output.columns:
-        context.output = context.output.drop(['price', 'volume'], 1)
     context.shorts = list(set(context.shorts) - set(remove_list))
     context.longs = list(set(context.longs) - set(remove_list))
     log.info("Longs: {}".format(context.longs))
@@ -338,14 +335,14 @@ def retry_skipped(context, data):
                 short_enters.append(s)
     total_positions = len(context.short_misses) + len(context.long_misses)
     if total_positions > 0:
-        pos_size = min((avalible_lev/total_positions), context.max_conc)
+        pos_size = min((avalible_lev / total_positions), context.max_conc)
     for security in context.long_misses:
         if data.can_trade(security):
             price = data.current(security, 'price')
             order_target_percent(
                 security,
                 pos_size,
-                stop_price = (price * 1.0025)
+                stop_price=(price * 1.0025)
             )
             context.today_entries[security] = price
     for security in context.short_misses:
@@ -354,10 +351,11 @@ def retry_skipped(context, data):
             order_target_percent(
                 security,
                 (-1 * pos_size),
-                stop_price = (price * 0.9975)
+                stop_price=(price * 0.9975)
             )
             context.today_entries[security] = price
     take_profits(context, data)
+
 
 def add_to_winners(context, cash, data):
     winners = {}
@@ -385,6 +383,7 @@ def add_to_winners(context, cash, data):
                 order_value(w, (-1 * add_amt), stop_price=price * 0.998)
                 log.info("adding {} to {}".format((-1 * add_amt), w))
 
+
 def add_avalible_lev_to_winners(context, data):
     avalible_lev = 1 - get_current_leverage(context, data)
     positions = context.portfolio.positions
@@ -404,16 +403,16 @@ def add_avalible_lev_to_winners(context, data):
                 if slope(history[s]) < 0:
                     winners[s] = 1
     if len(winners) > 0:
-        pos_size = min((avalible_lev/len(winners)), context.max_conc)
+        pos_size = min((avalible_lev / len(winners)), context.max_conc)
         for w, l in winners.items():
             if l == 0:
                 order_percent(w, pos_size)
                 if context.profit_logging:
                     log.info("adding {} to {}".format(pos_size, w))
             else:
-                order_percent(w, (-1*pos_size))
+                order_percent(w, (-1 * pos_size))
                 if context.profit_logging:
-                    log.info("adding {} to {}".format((-1*pos_size), w))
+                    log.info("adding {} to {}".format((-1 * pos_size), w))
 
 
 def cancel_open_orders(context, data):
@@ -421,6 +420,10 @@ def cancel_open_orders(context, data):
     for asset, orders in get_open_orders().items():
         for order in orders:
             cancel_order(order)
+            if order.amount < 0:
+                add_to_misses(context, asset, True)
+            else:
+                add_to_misses(context, asset, False)
             log.info("Canceling Order {} for {}".format(order.id, asset))
 
 
