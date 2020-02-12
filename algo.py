@@ -268,7 +268,6 @@ def enter_positions(context, data):
 
 def take_profits(context, data):
     log.info("Taking Profits")
-    cancel_open_orders(context, data)
     positions = context.portfolio.positions
     if len(positions) == 0:
         log.info("No Open Positions")
