@@ -145,7 +145,7 @@ def make_pipeline():
     high = High(mask=mask)
     low = Low(mask=mask)
     velo = Velocity(window_length=50, mask=mask)
-
+    universe = (((velo > 0) & (rsi < 50)) | ((velo < 0) & (rsi > 50))) & mask
     return Pipeline(
         columns={
             "ewma5": ewma5,
@@ -155,7 +155,7 @@ def make_pipeline():
             "vol": vol,
             "velo": velo
         },
-        screen=mask
+        screen=universe
     )
 
 
