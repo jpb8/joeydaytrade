@@ -317,6 +317,7 @@ def retry_skipped(context, data):
     cancel_open_orders(context, data)
     available_lev = 1 - get_current_leverage(context, data)
     if available_lev <= 0.1:
+        take_profits(context, data)
         return
     long_enters = []
     short_enters = []
