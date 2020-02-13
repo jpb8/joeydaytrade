@@ -11,7 +11,6 @@ log = logbook.Logger('algo')
 
 
 def initialize(context):
-    # TODO: Merge all get_prices and enter_postions functions. Run every Hour till 12
     #### Moring ####
     # Close all positions => Get Long/Short positions => Enter Positions => Cancel unfilled orders
     schedule_function(func=close_positions, date_rule=date_rules.every_day(), time_rule=time_rules.market_open())
@@ -26,7 +25,7 @@ def initialize(context):
         schedule_function(func=enter_positions, date_rule=date_rules.every_day(),
                           time_rule=time_rules.market_open(hours=i, minutes=9))
 
-    schedule_function(func=add_avalible_lev_to_winners, date_rule=date_rules.every_day(),
+    schedule_function(func=add_available_lev_to_winners, date_rule=date_rules.every_day(),
                       time_rule=time_rules.market_open(hours=2, minutes=46))
 
     # Close all positions and Record Vars
@@ -225,11 +224,11 @@ def enter_positions(context, data):
     """
     log.info("Entering Positions")
     if get_datetime().hour < 15:
-        avalible_lev = context.max_leverage
+        available_lev = context.max_leverage
     else:
         take_profits(context, data)
-        avalible_lev = context.max_leverage - get_current_leverage(context, data)
-    if avalible_lev <= 0.1:
+        available_lev = context.max_leverage - get_current_leverage(context, data)
+    if available_lev <= 0.1:
         return
     if len(context.longs) > 0:
         history = data.history(context.longs, 'close', 7, '1m').bfill().ffill()
@@ -237,15 +236,17 @@ def enter_positions(context, data):
             if slope(history[s]) < 0 or (history[s].iloc[-1] - history[s].iloc[0]) < 0:
                 del context.longs[i]
                 add_to_misses(context, s, False)
+                log.info("Skipping Long Entry {}".format(s))
     if len(context.shorts) > 0:
         history = data.history(context.shorts, 'close', 7, '1m').bfill().ffill()
         for i, s in enumerate(context.shorts):
             if slope(history[s]) > 0 or (history[s].iloc[-1] - history[s].iloc[0]) > 0:
                 del context.shorts[i]
                 add_to_misses(context, s, True)
+                log.info("Skipping Short Entry {}".format(s))
     total_positions = len(context.shorts) + len(context.longs)
     if total_positions > 0:
-        pos_size = min((avalible_lev / total_positions), context.max_conc)
+        pos_size = min((available_lev / total_positions), context.max_conc)
     for security in context.longs:
         if data.can_trade(security):
             price = data.current(security, 'price')
@@ -312,9 +313,10 @@ def take_profits(context, data):
 
 
 def retry_skipped(context, data):
+    log.info("Starting Retry Skipped")
     cancel_open_orders(context, data)
-    avalible_lev = 1 - get_current_leverage(context, data)
-    if avalible_lev <= 0.1:
+    available_lev = 1 - get_current_leverage(context, data)
+    if available_lev <= 0.1:
         return
     long_enters = []
     short_enters = []
@@ -324,15 +326,19 @@ def retry_skipped(context, data):
             if slope(history[s]) > 0 and (history[s].iloc[-1] - history[s].iloc[0]) > 0:
                 del context.long_misses[i]
                 long_enters.append(s)
+            else:
+                log.info("Skipping Long Entry {}".format(s))
     if len(context.short_misses) > 0:
         history = data.history(context.short_misses, 'close', 9, '1m').bfill().ffill()
         for i, s in enumerate(context.short_misses):
             if slope(history[s]) < 0 and (history[s].iloc[-1] - history[s].iloc[0]) < 0:
                 del context.short_misses[i]
                 short_enters.append(s)
+            else:
+                log.info("Skipping Short Entry {}".format(s))
     total_positions = len(context.short_misses) + len(context.long_misses)
     if total_positions > 0:
-        pos_size = min((avalible_lev / total_positions), context.max_conc)
+        pos_size = min((available_lev / total_positions), context.max_conc)
     for security in context.long_misses:
         if data.can_trade(security):
             price = data.current(security, 'price')
@@ -381,10 +387,11 @@ def add_to_winners(context, cash, data):
                 log.info("adding {} to {}".format((-1 * add_amt), w))
 
 
-def add_avalible_lev_to_winners(context, data):
-    avalible_lev = 1 - get_current_leverage(context, data)
+def add_available_lev_to_winners(context, data):
+    log.info("Adding available to winners")
+    available_lev = 1 - get_current_leverage(context, data)
     positions = context.portfolio.positions
-    if avalible_lev < 0.1 or len(positions) == 0:
+    if available_lev < 0.1 or len(positions) == 0:
         return
     history = data.history(list(positions), 'close', 10, '1m').bfill().ffill()
     winners = {}
@@ -400,7 +407,7 @@ def add_avalible_lev_to_winners(context, data):
                 if slope(history[s]) < 0:
                     winners[s] = 1
     if len(winners) > 0:
-        pos_size = min((avalible_lev / len(winners)), context.max_conc)
+        pos_size = min((available_lev / len(winners)), context.max_conc)
         for w, l in winners.items():
             if l == 0:
                 order_percent(w, pos_size)
