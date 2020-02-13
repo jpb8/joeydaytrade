@@ -336,10 +336,12 @@ def retry_skipped(context, data):
                 short_enters.append(s)
             else:
                 log.info("Skipping Short Entry {}".format(s))
-    total_positions = len(context.short_misses) + len(context.long_misses)
+    total_positions = len(short_enters) + len(long_enters)
     if total_positions > 0:
         pos_size = min((available_lev / total_positions), context.max_conc)
-    for security in context.long_misses:
+    else:
+        pos_size = 0
+    for security in long_enters:
         if data.can_trade(security):
             price = data.current(security, 'price')
             order_target_percent(
@@ -348,7 +350,7 @@ def retry_skipped(context, data):
                 stop_price=(price * 1.0025)
             )
             context.today_entries[security] = price
-    for security in context.short_misses:
+    for security in short_enters:
         if data.can_trade(security):
             price = data.current(security, 'price')
             order_target_percent(
