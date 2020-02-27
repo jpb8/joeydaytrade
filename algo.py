@@ -70,8 +70,8 @@ def initialize(context):
     context.today_entries = {}
 
     # Take profit setup
-    context.profit_threshold = 0.08
-    context.loss_threshold = -0.01
+    context.profit_threshold = 0.10
+    context.loss_threshold = -0.025
     context.profit_logging = True
 
     # market based long/short percentages
