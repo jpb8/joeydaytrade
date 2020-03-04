@@ -197,13 +197,13 @@ def get_prices(context, data):
     if get_datetime().hour < 15:
         log.info(get_datetime().hour)
         short_query = "rsi > 50 and price < low and volume > vol and velo < 0 and per_off_ewma < -0.05"
-        long_query = "rsi < 50 and price > high and volume > vol and velo > 0 and per_off_ewma > 0.05"
+        long_query = "rsi < 50 and price > high and volume > vol and velo > 0 and per_off_ewma > 0.04"
         remove_list = list(context.waits.keys())
     else:
         remove_list = list(context.portfolio.positions) + list(context.waits.keys()) + list(
             context.today_entries.keys())
         short_query = "rsi > 50 and price < low and volume > vol and velo < 0 and per_off_ewma < -0.05"
-        long_query = "rsi < 50 and price > high and volume > vol and velo > 0 and per_off_ewma > 0.05"
+        long_query = "rsi < 50 and price > high and volume > vol and velo > 0 and per_off_ewma > 0.04"
 
     # Add Shorts and Longs to Context
     context.shorts.extend(context.output.query(
@@ -247,6 +247,10 @@ def enter_positions(context, data):
     total_positions = len(context.shorts) + len(context.longs)
     if total_positions > 0:
         pos_size = min((available_lev / total_positions), context.max_conc)
+    else:
+        if len(context.long_misses) + len(context.short_misses) == 0:
+            add_available_lev_to_winners(context, data)
+        return
     for security in context.longs:
         if data.can_trade(security):
             price = data.current(security, 'price')
@@ -314,6 +318,9 @@ def take_profits(context, data):
 
 def retry_skipped(context, data):
     log.info("Starting Retry Skipped")
+    if len(context.long_misses) + len(context.short_misses) == 0:
+        add_available_lev_to_winners(context, data)
+        return
     cancel_open_orders(context, data)
     available_lev = 1 - get_current_leverage(context, data)
     if available_lev <= 0.1:
