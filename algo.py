@@ -319,6 +319,7 @@ def take_profits(context, data):
 def retry_skipped(context, data):
     log.info("Starting Retry Skipped")
     if len(context.long_misses) + len(context.short_misses) == 0:
+        take_profits(context, data)
         add_available_lev_to_winners(context, data)
         return
     cancel_open_orders(context, data)
