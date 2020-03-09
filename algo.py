@@ -42,12 +42,7 @@ def initialize(context):
         schedule_function(func=retry_skipped, date_rule=date_rules.every_day(),
                           time_rule=time_rules.market_open(minutes=i))
 
-    for i in range(196, 236, 10):  # (low, high, every i minutes)
-        # take profits/losses every hour
-        schedule_function(func=retry_skipped, date_rule=date_rules.every_day(),
-                          time_rule=time_rules.market_open(minutes=i))
-
-    for i in range(256, 369, 5):  # (low, high, every i minutes)
+    for i in range(186, 356, 5):  # (low, high, every i minutes)
         # take profits/losses every hour
         schedule_function(func=retry_skipped, date_rule=date_rules.every_day(),
                           time_rule=time_rules.market_open(minutes=i))
