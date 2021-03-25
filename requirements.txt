@@ -42,7 +42,7 @@ pylivetrader==0.1.1
 python-dateutil==2.8.1
 python-editor==1.0.4
 pytz==2019.3
-PyYAML==5.2
+PyYAML==5.4
 requests==2.22.0
 requests-file==1.4.3
 scipy==1.4.1
