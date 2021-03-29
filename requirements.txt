@@ -37,7 +37,7 @@ patsy==0.5.1
 pickleshare==0.7.5
 pipeline-live==0.1.9
 prompt-toolkit==3.0.2
-Pygments==2.5.2
+Pygments==2.7.4
 pylivetrader==0.1.1
 python-dateutil==2.8.1
 python-editor==1.0.4
