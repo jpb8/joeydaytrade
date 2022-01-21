@@ -18,7 +18,7 @@ empyrical==0.5.3
 idna==2.8
 iexfinance==0.4.3
 intervaltree==3.0.2
-ipython==7.10.2
+ipython==7.16.3
 ipython-genutils==0.2.0
 jedi==0.15.1
 Logbook==1.5.3
