@@ -5,7 +5,7 @@ asyncio-nats-client==0.10.0
 backcall==0.1.0
 bcolz==0.12.1
 Bottleneck==1.0.0
-certifi==2019.11.28
+certifi==2022.12.7
 chardet==3.0.4
 Click==7.0
 colorama==0.4.3
